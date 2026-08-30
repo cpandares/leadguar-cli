@@ -1,0 +1,7 @@
+src/
+tsconfig.json
+.env
+.leadguard/
+*.log
+.git/
+.github/

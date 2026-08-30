@@ -1,18 +1,32 @@
 {
-  "name": "scan",
+  "name": "@cpandares/leadguard",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "dev": "tsx src/bin/cli.ts",
-    "build": "tsc"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
+  "description": "Agente PM Técnico y Supervisor de Arquitectura CLI",
+  "type": "module",
+  "main": "./dist/bin/cli.js",
   "bin": {
     "leadguard": "./dist/bin/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev": "tsx src/bin/cli.ts",
+    "build": "tsc",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "cli",
+    "agent",
+    "architecture",
+    "pm",
+    "opencode",
+    "developer-tools"
+  ],
+  "author": "Cesar Pandares",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.7.0",
