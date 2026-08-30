@@ -1,15 +1,42 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { input } from '@inquirer/prompts';
+import { input, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import ora from 'ora';
 import { ProjectScanner } from '../core/scanner.js';
 import { consultLeadGuard } from '../core/llm.js';
+import { loadLocalConfig, saveLocalConfig } from '../core/state.js';
+import { ROLE_INQUIRER_CHOICES, TECHNICAL_ROLES } from '../core/roles.js';
 
 export async function taskCommand(initialDescription?: string): Promise<void> {
   console.log(chalk.bold.cyan('\n🛡️  LeadGuard - PM & Supervisor Técnico\n'));
 
-  // 1. Obtener la descripción inicial si no vino por CLI args
+  // 1. Verificar o seleccionar el rol técnico del proyecto
+  let localConfig = await loadLocalConfig();
+  let selectedRole: string;
+
+  if (!localConfig || !localConfig.selectedRole) {
+    console.log(chalk.yellow('Configuración de proyecto no detectada en .leadguard/\n'));
+    selectedRole = await select({
+      message: 'Selecciona el perfil técnico especializado de LeadGuard para este proyecto:',
+      choices: ROLE_INQUIRER_CHOICES,
+    });
+
+    localConfig = {
+      selectedRole,
+      initializedAt: new Date().toISOString(),
+    };
+    await saveLocalConfig(localConfig);
+    console.log(chalk.green(`\nConfiguración guardada en .leadguard/config.json\n`));
+  } else {
+    selectedRole = localConfig.selectedRole;
+    const roleInfo = TECHNICAL_ROLES.find((r) => r.key === selectedRole);
+    console.log(
+      chalk.gray(`Perfil Técnico Activo: ${chalk.bold.white(roleInfo?.name || selectedRole)}\n`)
+    );
+  }
+
+  // 2. Obtener la descripción inicial si no vino por CLI args
   let description = initialDescription;
   if (!description) {
     description = await input({
@@ -18,7 +45,7 @@ export async function taskCommand(initialDescription?: string): Promise<void> {
     });
   }
 
-  // 2. Escanear el proyecto
+  // 3. Escanear el proyecto
   const spinner = ora('Escaneando contexto del repositorio...').start();
   const scanner = new ProjectScanner(process.cwd());
   const context = await scanner.scan();
@@ -28,11 +55,11 @@ export async function taskCommand(initialDescription?: string): Promise<void> {
   let isReady = false;
   let specOutput = '';
 
-  // 3. Bucle interactivo de Discovery
+  // 4. Bucle interactivo de Discovery
   while (!isReady) {
     const analysisSpinner = ora('LeadGuard está analizando requerimientos y dependencias...').start();
-    
-    const result = await consultLeadGuard(description, context, qaHistory);
+
+    const result = await consultLeadGuard(description, context, qaHistory, selectedRole);
     analysisSpinner.stop();
 
     if (result.status === 'BLOCKED' && result.questions && result.questions.length > 0) {
@@ -58,10 +85,10 @@ export async function taskCommand(initialDescription?: string): Promise<void> {
     }
   }
 
-  // 4. Guardar el SPEC aprobado
+  // 5. Guardar el SPEC aprobado
   if (isReady && specOutput) {
     const saveSpinner = ora('Guardando especificación técnica...').start();
-    
+
     const outputDir = path.join(process.cwd(), '.leadguard', 'tasks');
     await fs.mkdir(outputDir, { recursive: true });
 
@@ -70,7 +97,11 @@ export async function taskCommand(initialDescription?: string): Promise<void> {
     const filePath = path.join(outputDir, fileName);
 
     await fs.writeFile(filePath, specOutput, 'utf-8');
-    saveSpinner.succeed(chalk.green(`SPEC aprobado y guardado en: ${chalk.bold(path.relative(process.cwd(), filePath))}`));
+    saveSpinner.succeed(
+      chalk.green(
+        `SPEC aprobado y guardado en: ${chalk.bold(path.relative(process.cwd(), filePath))}`
+      )
+    );
 
     console.log(chalk.bold.green('\n📋 Resumen del SPEC Generado:\n'));
     console.log(chalk.white(specOutput));

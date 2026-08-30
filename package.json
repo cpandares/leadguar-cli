@@ -1,6 +1,6 @@
 {
   "name": "@cpandares/leadguard",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Agente PM Técnico y Supervisor de Arquitectura CLI",
   "type": "module",
   "main": "./dist/bin/cli.js",
