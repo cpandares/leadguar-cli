@@ -11,6 +11,20 @@ export interface ProjectContext {
   gitBranch?: string;
 }
 
+export interface FileSummary {
+  path: string;
+  content: string;
+}
+
+export interface ProjectContext {
+  languages: string[];
+  manifests: { file: string; contentSummary: string }[];
+  databaseSchemas: FileSummary[];      
+  documentation: FileSummary[];      
+  infrastructure: string[];
+  envKeys: string[];
+}
+
 export class ProjectScanner {
   private rootDir: string;
 
@@ -177,14 +191,25 @@ export class ProjectScanner {
 }
 
 export function formatContextForLLM(ctx: ProjectContext): string {
+  const docsBlock = ctx.documentation.length > 0
+    ? `\n#### DOCUMENTACIÓN DEL PROYECTO (README / DOCS):\n` +
+      ctx.documentation.map((d) => `**[${d.path}]**\n\`\`\`markdown\n${d.content}\n\`\`\``).join('\n\n')
+    : '';
+
+  const dbBlock = ctx.databaseSchemas.length > 0
+    ? `\n#### ESQUEMAS DE BASE DE DATOS Y MODELOS DETECTADOS:\n` +
+      ctx.databaseSchemas.map((s) => `**[${s.path}]**\n\`\`\`\n${s.content}\n\`\`\``).join('\n\n')
+    : '\n*No se encontraron esquemas ni migraciones legibles.*';
+
   return `
-### CONTEXTO DETECTADO EN EL PROYECTO
-- **Lenguajes detectados:** ${ctx.languages.join(', ') || 'No identificados'}
+### CONTEXTO TÉCNICO COMPLETO DEL REPOSITORIO
+- **Lenguajes:** ${ctx.languages.join(', ') || 'No identificados'}
 - **Infraestructura:** ${ctx.infrastructure.join(', ') || 'Ninguna'}
-- **Archivos de Base de Datos / Migraciones:** ${ctx.databaseArtifacts.join(', ') || 'Ninguno'}
-- **Variables de Entorno Clave (.env.example):** ${ctx.envKeys.join(', ') || 'Sin archivo de ejemplo'}
+- **Variables de Entorno Clave (.env.example):** ${ctx.envKeys.join(', ') || 'Ninguna'}
 
 #### Manifiestos de Dependencias:
 ${ctx.manifests.map((m) => `**[${m.file}]**\n\`\`\`json\n${m.contentSummary}\n\`\`\``).join('\n\n')}
+${docsBlock}
+${dbBlock}
 `.trim();
 }
