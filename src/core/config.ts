@@ -28,7 +28,7 @@ export function getConfig(): AppConfig {
     );
   }
 
-  const model = process.env.AI_MODEL || process.env.OPENCODE_MODEL || 'deepseek-v4-pro';
+  const model = process.env.AI_MODEL || process.env.OPENCODE_MODEL || 'MiMo-V2.5-Pro';
   const baseURL = process.env.AI_BASE_URL || process.env.OPENCODE_BASE_URL;
   const temperature = parseFloat(process.env.AI_TEMPERATURE || '0.1');
 
