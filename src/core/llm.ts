@@ -3,6 +3,7 @@ import { getConfig } from './config.js';
 import { SYSTEM_PROMPT } from '../prompts/system-prompt.js';
 import { ProjectContext, formatContextForLLM } from './scanner.js';
 import { LLMResponse } from './types.js';
+import { getRoleModifierPrompt } from './roles.js';
 
 let clientInstance: OpenAI | null = null;
 
@@ -75,17 +76,19 @@ function parseLLMJson(rawText: string): LLMResponse {
 export async function consultLeadGuard(
   taskDescription: string,
   context: ProjectContext,
-  qaHistory: { question: string; answer: string }[] = []
+  qaHistory: { question: string; answer: string }[] = [],
+  roleKey?: string // <-- Debe estar declarado aquí
 ): Promise<LLMResponse> {
   const { client, model } = getClient();
+  const rolePrompt = roleKey ? getRoleModifierPrompt(roleKey) : '';
   const formattedContext = formatContextForLLM(context);
 
   const historyText =
     qaHistory.length > 0
       ? `\n### ACLARATORIAS PREVIAS RESUELTAS:\n` +
-        qaHistory
-          .map((qa, i) => `${i + 1}. **P:** ${qa.question}\n   **R:** ${qa.answer}`)
-          .join('\n')
+      qaHistory
+        .map((qa, i) => `${i + 1}. **P:** ${qa.question}\n   **R:** ${qa.answer}`)
+        .join('\n')
       : '';
 
   const userPrompt = `

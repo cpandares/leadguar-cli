@@ -2,15 +2,6 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import fg from 'fast-glob';
 
-export interface ProjectContext {
-  languages: string[];
-  manifests: { file: string; contentSummary: string }[];
-  databaseArtifacts: string[];
-  infrastructure: string[];
-  envKeys: string[];
-  gitBranch?: string;
-}
-
 export interface FileSummary {
   path: string;
   content: string;
@@ -19,8 +10,8 @@ export interface FileSummary {
 export interface ProjectContext {
   languages: string[];
   manifests: { file: string; contentSummary: string }[];
-  databaseSchemas: FileSummary[];      
-  documentation: FileSummary[];      
+  databaseSchemas: FileSummary[];
+  documentation: FileSummary[];
   infrastructure: string[];
   envKeys: string[];
 }
@@ -33,9 +24,10 @@ export class ProjectScanner {
   }
 
   public async scan(): Promise<ProjectContext> {
-    const [manifests, dbFiles, infraFiles, envKeys] = await Promise.all([
+    const [manifests, dbSchemas, documentation, infraFiles, envKeys] = await Promise.all([
       this.detectManifests(),
-      this.detectDatabaseArtifacts(),
+      this.readDatabaseSchemas(),
+      this.readDocumentation(),
       this.detectInfrastructure(),
       this.detectEnvKeys(),
     ]);
@@ -45,10 +37,97 @@ export class ProjectScanner {
     return {
       languages,
       manifests,
-      databaseArtifacts: dbFiles,
+      databaseSchemas: dbSchemas,
+      documentation,
       infrastructure: infraFiles,
       envKeys,
     };
+  }
+
+  // Lee el contenido real de esquemas de BD, modelos y migraciones
+  private async readDatabaseSchemas(): Promise<FileSummary[]> {
+    const patterns = [
+      '**/*schema.prisma',
+      '**/*schema.sql',
+      '**/db/schema.{ts,js}',
+      '**/models/**/*.{ts,js,py}',
+      '**/entities/**/*.{ts,js}',
+      '**/migrations/**/*.{sql,ts,js}',
+      '**/database/migrations/**/*.{sql,ts,js}',
+    ];
+
+    const files = await fg(patterns, {
+      cwd: this.rootDir,
+      deep: 4,
+      ignore: ['**/node_modules/**', '**/dist/**', '**/.git/**', '**/vendor/**'],
+    });
+
+    const summaries: FileSummary[] = [];
+    let totalBytesRead = 0;
+    const MAX_SCHEMA_BYTES = 30000; // Límite de 30KB para evitar sobrecarga de tokens
+
+    for (const relPath of files) {
+      if (totalBytesRead >= MAX_SCHEMA_BYTES) break;
+
+      try {
+        const fullPath = path.join(this.rootDir, relPath);
+        const rawContent = await fs.readFile(fullPath, 'utf-8');
+
+        const content =
+          rawContent.length > 4000
+            ? rawContent.slice(0, 4000) + '\n... [TRUNCATED DUE TO SIZE]'
+            : rawContent;
+
+        summaries.push({ path: relPath, content });
+        totalBytesRead += content.length;
+      } catch {
+        // Ignorar archivo si no se puede leer
+      }
+    }
+
+    return summaries;
+  }
+
+  // Lee documentación existente (README, docs, architecture)
+  private async readDocumentation(): Promise<FileSummary[]> {
+    const patterns = [
+      'README.md',
+      'README',
+      'ARCHITECTURE.md',
+      'docs/**/*.md',
+      '.github/**/*.md',
+    ];
+
+    const files = await fg(patterns, {
+      cwd: this.rootDir,
+      deep: 3,
+      ignore: ['**/node_modules/**', '**/dist/**', '**/.git/**'],
+    });
+
+    const docs: FileSummary[] = [];
+    let totalBytesRead = 0;
+    const MAX_DOCS_BYTES = 20000; // Límite de 20KB para documentación
+
+    for (const relPath of files) {
+      if (totalBytesRead >= MAX_DOCS_BYTES) break;
+
+      try {
+        const fullPath = path.join(this.rootDir, relPath);
+        const rawContent = await fs.readFile(fullPath, 'utf-8');
+
+        const content =
+          rawContent.length > 3000
+            ? rawContent.slice(0, 3000) + '\n... [TRUNCATED]'
+            : rawContent;
+
+        docs.push({ path: relPath, content });
+        totalBytesRead += content.length;
+      } catch {
+        // Ignorar
+      }
+    }
+
+    return docs;
   }
 
   private async detectManifests(): Promise<{ file: string; contentSummary: string }[]> {
@@ -98,49 +177,15 @@ export class ProjectScanner {
 
         results.push({ file: relPath, contentSummary: summary });
       } catch {
-        // Archivo no legible o JSON inválido
+        // Ignorar JSON inválido o inaccesible
       }
     }
 
     return results;
   }
 
-  private async detectDatabaseArtifacts(): Promise<string[]> {
-    const patterns = [
-      '**/*schema.prisma',
-      '**/*schema.sql',
-      '**/migrations/**/*.{sql,ts,js,py}',
-      '**/database/migrations/**/*',
-      '**/db/migrations/**/*',
-      '**/models/**/*.{ts,js,py,go,php}',
-      '**/entities/**/*.{ts,js,java}',
-      '**/alembic/**/*',
-      '**/knexfile.{js,ts}',
-      '**/ormconfig.{json,js,ts}',
-    ];
-
-    const matches = await fg(patterns, {
-      cwd: this.rootDir,
-      deep: 4,
-      ignore: ['**/node_modules/**', '**/vendor/**', '**/dist/**', '**/.git/**'],
-    });
-
-    return matches.slice(0, 30);
-  }
-
   private async detectInfrastructure(): Promise<string[]> {
-    const patterns = [
-      'Dockerfile*',
-      'docker-compose*.{yml,yaml}',
-      'k8s/**/*.{yml,yaml}',
-      'kubernetes/**/*.{yml,yaml}',
-      'helm/**/*',
-      'Procfile',
-      'serverless.{yml,ts,js}',
-      'terraform/**/*.tf',
-    ];
-
-    return fg(patterns, {
+    return fg(['Dockerfile*', 'docker-compose*.{yml,yaml}', 'k8s/**/*.{yml,yaml}', 'serverless.{yml,ts,js}'], {
       cwd: this.rootDir,
       deep: 3,
       ignore: ['**/node_modules/**', '**/.git/**'],
@@ -165,7 +210,7 @@ export class ProjectScanner {
         }
         break;
       } catch {
-        // El archivo no existe, continúa buscando
+        // Continuar si no existe
       }
     }
 
@@ -177,7 +222,7 @@ export class ProjectScanner {
 
     for (const file of manifestFiles) {
       if (file.endsWith('package.json')) langs.add('JavaScript/TypeScript');
-      if (file.endsWith('requirements.txt') || file.endsWith('pyproject.toml')) langs.add('Python');
+      if (file.endsWith('requirements.txt') || file.endsWith('pyproject.toml') || file.endsWith('Pipfile')) langs.add('Python');
       if (file.endsWith('composer.json')) langs.add('PHP');
       if (file.endsWith('go.mod')) langs.add('Go');
       if (file.endsWith('Cargo.toml')) langs.add('Rust');
@@ -191,15 +236,17 @@ export class ProjectScanner {
 }
 
 export function formatContextForLLM(ctx: ProjectContext): string {
-  const docsBlock = ctx.documentation.length > 0
-    ? `\n#### DOCUMENTACIÓN DEL PROYECTO (README / DOCS):\n` +
+  const docsBlock =
+    ctx.documentation.length > 0
+      ? `\n#### DOCUMENTACIÓN DEL PROYECTO (README / DOCS):\n` +
       ctx.documentation.map((d) => `**[${d.path}]**\n\`\`\`markdown\n${d.content}\n\`\`\``).join('\n\n')
-    : '';
+      : '';
 
-  const dbBlock = ctx.databaseSchemas.length > 0
-    ? `\n#### ESQUEMAS DE BASE DE DATOS Y MODELOS DETECTADOS:\n` +
+  const dbBlock =
+    ctx.databaseSchemas.length > 0
+      ? `\n#### ESQUEMAS DE BASE DE DATOS Y MODELOS DETECTADOS:\n` +
       ctx.databaseSchemas.map((s) => `**[${s.path}]**\n\`\`\`\n${s.content}\n\`\`\``).join('\n\n')
-    : '\n*No se encontraron esquemas ni migraciones legibles.*';
+      : '\n*No se encontraron esquemas ni migraciones legibles.*';
 
   return `
 ### CONTEXTO TÉCNICO COMPLETO DEL REPOSITORIO
