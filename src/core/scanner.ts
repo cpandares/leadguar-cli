@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import fg from 'fast-glob';
+import { getLogger } from './logger.js';
 
 export interface FileSummary {
   path: string;
@@ -81,7 +82,7 @@ export class ProjectScanner {
         summaries.push({ path: relPath, content });
         totalBytesRead += content.length;
       } catch {
-        // Ignorar archivo si no se puede leer
+        getLogger().debug('No se pudo leer archivo de esquema', { path: relPath });
       }
     }
 
@@ -123,7 +124,7 @@ export class ProjectScanner {
         docs.push({ path: relPath, content });
         totalBytesRead += content.length;
       } catch {
-        // Ignorar
+        getLogger().debug('No se pudo leer documentación', { path: relPath });
       }
     }
 
@@ -177,7 +178,7 @@ export class ProjectScanner {
 
         results.push({ file: relPath, contentSummary: summary });
       } catch {
-        // Ignorar JSON inválido o inaccesible
+        getLogger().debug('No se pudo leer manifiesto', { path: relPath });
       }
     }
 
@@ -210,7 +211,7 @@ export class ProjectScanner {
         }
         break;
       } catch {
-        // Continuar si no existe
+        getLogger().debug('Template .env no encontrado', { file });
       }
     }
 

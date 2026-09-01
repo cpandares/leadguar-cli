@@ -1,4 +1,5 @@
 import { LLMProviderAdapter, Message, CompletionOptions } from './types.js';
+import { getLogger } from '../logger.js';
 
 export class GoogleAdapter implements LLMProviderAdapter {
   readonly providerName = 'google';
@@ -50,6 +51,7 @@ export class GoogleAdapter implements LLMProviderAdapter {
 
     if (!response.ok) {
       const errorText = await response.text();
+      getLogger().error('Error en API Google Gemini', { status: response.status, body: errorText.slice(0, 500) });
       throw new Error(`Error en API Google Gemini (${response.status}): ${errorText}`);
     }
 

@@ -5,6 +5,7 @@ import { LLMResponse } from './types.js';
 import { getRoleModifierPrompt } from './roles.js';
 import { getLLMAdapter } from './adapters/factory.js';
 import { Message } from './adapters/types.js';
+import { getLogger } from './logger.js';
 
 // ---------------------------------------------------------------------------
 // AQUÍ VA LA FUNCIÓN parseLLMJson
@@ -36,7 +37,7 @@ export function parseLLMJson(rawText: string): LLMResponse {
 
     return JSON.parse(cleaned) as LLMResponse;
   } catch (err: any) {
-    console.warn('⚠️ Advertencia: Error parseando JSON estricto. Intentando recuperar SPEC...');
+    getLogger().warn('Error parseando JSON estricto, intentando fallback', { error: err.message });
 
     // Fallback: Si el JSON se cortó por longitud, extrae el contenido de specContent
     const specMatch = rawText.match(/"specContent"\s*:\s*"([\s\S]*)/);
@@ -112,6 +113,7 @@ RESPONDE ÚNICAMENTE CON UN OBJETO JSON VÁLIDO:
 
     return parseLLMJson(rawContent || '{}');
   } catch (error: any) {
+    getLogger().error('Fallo en consulta LLM', { provider: config.provider, model: config.model, error: error.message });
     throw new Error(`Fallo en Proveedor LLM (${config.provider} / ${config.model}): ${error.message}`);
   }
 }

@@ -1,4 +1,5 @@
 import { LLMProviderAdapter, Message, CompletionOptions } from './types.js';
+import { getLogger } from '../logger.js';
 
 export class AnthropicAdapter implements LLMProviderAdapter {
   readonly providerName = 'anthropic';
@@ -49,6 +50,7 @@ export class AnthropicAdapter implements LLMProviderAdapter {
 
     if (!response.ok) {
       const errorText = await response.text();
+      getLogger().error('Error en API Anthropic', { status: response.status, body: errorText.slice(0, 500) });
       throw new Error(`Error en API Anthropic (${response.status}): ${errorText}`);
     }
 
