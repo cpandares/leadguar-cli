@@ -21,7 +21,7 @@ El markdown generado en \`specContent\` debe incluir:
 `.trim();
 
 export function buildSystemPrompt(roleDirective?: string): string {
-  if (!roleDirective) {
+  if (!roleDirective || !roleDirective.trim()) {
     return BASE_LEADGUARD_PROMPT;
   }
 
@@ -31,7 +31,7 @@ ${BASE_LEADGUARD_PROMPT}
 ==================================================
 ESPECIALIZACIÓN TÉCNICA ACTIVA
 ==================================================
-${roleDirective}
+${roleDirective.trim()}
 `.trim();
 }
 

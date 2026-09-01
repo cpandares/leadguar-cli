@@ -1,29 +1,15 @@
-import OpenAI from 'openai';
 import { getConfig } from './config.js';
-import { SYSTEM_PROMPT } from '../prompts/system-prompt.js';
+import { buildSystemPrompt } from '../prompts/system-prompt.js';
 import { ProjectContext, formatContextForLLM } from './scanner.js';
 import { LLMResponse } from './types.js';
 import { getRoleModifierPrompt } from './roles.js';
-
-let clientInstance: OpenAI | null = null;
-
-function getClient(): { client: OpenAI; model: string } {
-  const config = getConfig();
-
-  if (!clientInstance) {
-    clientInstance = new OpenAI({
-      apiKey: config.apiKey,
-      baseURL: config.baseURL,
-    });
-  }
-
-  return { client: clientInstance, model: config.model };
-}
+import { getLLMAdapter } from './adapters/factory.js';
+import { Message } from './adapters/types.js';
 
 // ---------------------------------------------------------------------------
 // AQUÍ VA LA FUNCIÓN parseLLMJson
 // ---------------------------------------------------------------------------
-function parseLLMJson(rawText: string): LLMResponse {
+export function parseLLMJson(rawText: string): LLMResponse {
   try {
     // 1. Limpiar bloques de pensamiento (<think>...</think>)
     let cleaned = rawText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
@@ -77,10 +63,13 @@ export async function consultLeadGuard(
   taskDescription: string,
   context: ProjectContext,
   qaHistory: { question: string; answer: string }[] = [],
-  roleKey?: string // <-- Debe estar declarado aquí
+  roleKey?: string
 ): Promise<LLMResponse> {
-  const { client, model } = getClient();
+  const config = getConfig();
+  const adapter = getLLMAdapter(config);
+
   const rolePrompt = roleKey ? getRoleModifierPrompt(roleKey) : '';
+  const systemPrompt = buildSystemPrompt(rolePrompt);
   const formattedContext = formatContextForLLM(context);
 
   const historyText =
@@ -110,20 +99,19 @@ RESPONDE ÚNICAMENTE CON UN OBJETO JSON VÁLIDO:
 }
 `.trim();
 
+  const messages: Message[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt },
+  ];
+
   try {
-    const response = await client.chat.completions.create({
-      model: model,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: userPrompt },
-      ],
-      temperature: 0.1,
-      max_tokens: 8192,
+    const rawContent = await adapter.generateCompletion(messages, {
+      temperature: config.temperature,
+      maxTokens: 8192,
     });
 
-    const content = response.choices[0]?.message?.content || '{}';
-    return parseLLMJson(content);
+    return parseLLMJson(rawContent || '{}');
   } catch (error: any) {
-    throw new Error(`Fallo en Proveedor LLM (${model}): ${error.message}`);
+    throw new Error(`Fallo en Proveedor LLM (${config.provider} / ${config.model}): ${error.message}`);
   }
-}
+}
