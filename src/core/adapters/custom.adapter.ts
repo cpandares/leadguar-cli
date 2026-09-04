@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { LLMProviderAdapter, Message, CompletionOptions } from './types.js';
+import { LLMProviderAdapter, Message, CompletionOptions, CompletionResult } from './types.js';
 import { getLogger } from '../logger.js';
 
 export class CustomAdapter implements LLMProviderAdapter {
@@ -25,7 +25,7 @@ export class CustomAdapter implements LLMProviderAdapter {
     });
   }
 
-  async generateCompletion(messages: Message[], options?: CompletionOptions): Promise<string> {
+  async generateCompletion(messages: Message[], options?: CompletionOptions): Promise<CompletionResult> {
     try {
       const response = await this.client.chat.completions.create({
         model: this.model,
@@ -34,7 +34,15 @@ export class CustomAdapter implements LLMProviderAdapter {
         max_tokens: options?.maxTokens,
       });
 
-      return response.choices[0]?.message?.content || '';
+      return {
+        content: response.choices[0]?.message?.content || '',
+        finishReason: response.choices[0]?.finish_reason as CompletionResult['finishReason'],
+        usage: {
+          promptTokens: response.usage?.prompt_tokens,
+          completionTokens: response.usage?.completion_tokens,
+          totalTokens: response.usage?.total_tokens,
+        },
+      };
     } catch (error: any) {
       getLogger().error('Error en API Custom', { error: error.message, status: error.status });
       throw error;

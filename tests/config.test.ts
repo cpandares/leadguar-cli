@@ -14,6 +14,7 @@ describe('Config - Validación estricta', () => {
     delete process.env.ANTHROPIC_API_KEY;
     delete process.env.GEMINI_API_KEY;
     delete process.env.OPENCODE_MODEL;
+    delete process.env.AI_MAX_TOKENS;
   });
 
   afterEach(() => {
@@ -85,5 +86,24 @@ describe('Config - Validación estricta', () => {
 
     const config = getConfig();
     expect(config.provider).toBe('openai');
+  });
+
+  it('debe usar AI_MAX_TOKENS=32000 por defecto', () => {
+    process.env.AI_PROVIDER = 'openai';
+    process.env.AI_MANAGER_KEY = 'test-key';
+    process.env.AI_MODEL = 'gpt-4o';
+
+    const config = getConfig();
+    expect(config.maxTokens).toBe(32000);
+  });
+
+  it('debe leer AI_MAX_TOKENS del entorno si está definido', () => {
+    process.env.AI_PROVIDER = 'openai';
+    process.env.AI_MANAGER_KEY = 'test-key';
+    process.env.AI_MODEL = 'gpt-4o';
+    process.env.AI_MAX_TOKENS = '16000';
+
+    const config = getConfig();
+    expect(config.maxTokens).toBe(16000);
   });
 });

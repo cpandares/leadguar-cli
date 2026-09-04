@@ -1,4 +1,4 @@
-import { LLMProviderAdapter, Message, CompletionOptions } from './types.js';
+import { LLMProviderAdapter, Message, CompletionOptions, CompletionResult } from './types.js';
 import { getLogger } from '../logger.js';
 
 export class GoogleAdapter implements LLMProviderAdapter {
@@ -16,7 +16,7 @@ export class GoogleAdapter implements LLMProviderAdapter {
     this.model = options.model || 'gemini-1.5-pro';
   }
 
-  async generateCompletion(messages: Message[], options?: CompletionOptions): Promise<string> {
+  async generateCompletion(messages: Message[], options?: CompletionOptions): Promise<CompletionResult> {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
 
     const systemMessage = messages.find((m) => m.role === 'system')?.content;
@@ -57,10 +57,18 @@ export class GoogleAdapter implements LLMProviderAdapter {
 
     const data = (await response.json()) as any;
     const candidate = data.candidates?.[0];
-    if (candidate?.content?.parts?.[0]?.text) {
-      return candidate.content.parts[0].text;
-    }
+    const content = candidate?.content?.parts?.[0]?.text || '';
 
-    return '';
+    return {
+      content,
+      finishReason: candidate?.finishReason === 'STOP' ? 'stop' : candidate?.finishReason === 'MAX_TOKENS' ? 'length' : candidate?.finishReason,
+      usage: data.usageMetadata
+        ? {
+            promptTokens: data.usageMetadata.promptTokenCount,
+            completionTokens: data.usageMetadata.candidatesTokenCount,
+            totalTokens: data.usageMetadata.totalTokenCount,
+          }
+        : undefined,
+    };
   }
 }

@@ -1,4 +1,4 @@
-import { LLMProviderAdapter, Message, CompletionOptions } from './types.js';
+import { LLMProviderAdapter, Message, CompletionOptions, CompletionResult } from './types.js';
 import { getLogger } from '../logger.js';
 
 export class AnthropicAdapter implements LLMProviderAdapter {
@@ -18,7 +18,7 @@ export class AnthropicAdapter implements LLMProviderAdapter {
     this.baseURL = options.baseURL || 'https://api.anthropic.com/v1/messages';
   }
 
-  async generateCompletion(messages: Message[], options?: CompletionOptions): Promise<string> {
+  async generateCompletion(messages: Message[], options?: CompletionOptions): Promise<CompletionResult> {
     const systemMessage = messages.find((m) => m.role === 'system')?.content;
     const userAndAssistantMessages = messages
       .filter((m) => m.role === 'user' || m.role === 'assistant')
@@ -55,10 +55,18 @@ export class AnthropicAdapter implements LLMProviderAdapter {
     }
 
     const data = (await response.json()) as any;
-    if (data.content && Array.isArray(data.content) && data.content.length > 0) {
-      return data.content[0].text || '';
-    }
+    const content = data.content?.[0]?.text || '';
 
-    return '';
+    return {
+      content,
+      finishReason: data.stop_reason === 'end_turn' ? 'stop' : data.stop_reason,
+      usage: data.usage
+        ? {
+            promptTokens: data.usage.input_tokens,
+            completionTokens: data.usage.output_tokens,
+            totalTokens: (data.usage.input_tokens || 0) + (data.usage.output_tokens || 0),
+          }
+        : undefined,
+    };
   }
 }

@@ -10,6 +10,7 @@ export interface AppConfig {
   model: string;
   baseURL?: string;
   temperature: number;
+  maxTokens: number;
 }
 
 const VALID_PROVIDERS = ['opencode', 'openai', 'anthropic', 'google', 'gemini', 'custom'] as const;
@@ -48,6 +49,7 @@ export function getConfig(): AppConfig {
 
   const baseURL = process.env.AI_BASE_URL || process.env.OPENCODE_BASE_URL;
   const temperature = parseFloat(process.env.AI_TEMPERATURE || '0.1');
+  const maxTokens = parseInt(process.env.AI_MAX_TOKENS || '32000', 10);
 
   return {
     provider: provider.toLowerCase(),
@@ -55,5 +57,6 @@ export function getConfig(): AppConfig {
     model,
     baseURL,
     temperature,
+    maxTokens,
   };
 }

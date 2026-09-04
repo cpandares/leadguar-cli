@@ -4,9 +4,22 @@ import { input, select } from '@inquirer/prompts';
 import chalk from 'chalk';
 import ora from 'ora';
 import { ProjectScanner } from '../core/scanner.js';
-import { consultLeadGuard } from '../core/llm.js';
+import { consultLeadGuard, extractFileReadRequests } from '../core/llm.js';
+import { readRequestedFiles } from '../core/scanner.js';
 import { loadLocalConfig, saveLocalConfig } from '../core/state.js';
 import { ROLE_INQUIRER_CHOICES, TECHNICAL_ROLES } from '../core/roles.js';
+import { getLogger } from '../core/logger.js';
+
+const AUTO_READ_PATTERN = /^(inspeccion|revis|le[eé]|mira|usa|ya est|est[aá] en el c|no s[eé]|no tengo|no aplica|no lo s|no existe|no hay|no contiene| revisalo|leelo|inspeccionalo)/i;
+
+function detectAutoReadAnswer(question: string, answer: string): string | null {
+  if (AUTO_READ_PATTERN.test(answer.trim())) {
+    const filePattern = /(?:src|app|components|pages|hooks|services|utils|lib|routes|api|store|middleware|bin|public|assets|styles|types|interfaces|models|entities|config|server|client)\/[\w./-]+\.(?:tsx?|jsx?|vue|svelte|json|css|scss|md|yaml|yml|sql|prisma|env)/gi;
+    const match = question.match(filePattern);
+    return match ? match[0] : null;
+  }
+  return null;
+}
 
 export async function taskCommand(initialDescription?: string): Promise<void> {
   console.log(chalk.bold.cyan('\n🛡️  LeadGuard - PM & Supervisor Técnico\n'));
@@ -54,25 +67,60 @@ export async function taskCommand(initialDescription?: string): Promise<void> {
   const qaHistory: { question: string; answer: string }[] = [];
   let isReady = false;
   let specOutput = '';
+  const MAX_BLOCKED_ROUNDS = 5;
+  let blockedRound = 0;
 
   // 4. Bucle interactivo de Discovery
-  while (!isReady) {
+  while (!isReady && blockedRound < MAX_BLOCKED_ROUNDS) {
     const analysisSpinner = ora('LeadGuard está analizando requerimientos y dependencias...').start();
 
-    const result = await consultLeadGuard(description, context, qaHistory, selectedRole);
+    const result = await consultLeadGuard(description, context, qaHistory, selectedRole, process.cwd());
     analysisSpinner.stop();
 
     if (result.status === 'BLOCKED' && result.questions && result.questions.length > 0) {
+      blockedRound++;
+
+      if (blockedRound >= MAX_BLOCKED_ROUNDS) {
+        console.log(
+          chalk.red(
+            `\n⚠️  Se alcanzó el límite de ${MAX_BLOCKED_ROUNDS} rondas de clarificación. Generando SPEC con el contexto disponible...\n`
+          )
+        );
+        // Forzar generación del SPEC con lo que se tiene
+        continue;
+      }
+
       console.log(chalk.yellow('\n⚠️  Falta contexto crítico para garantizar el alcance:'));
       if (result.detectedContextSummary) {
         console.log(chalk.gray(`Contexto detectado: ${result.detectedContextSummary}\n`));
       }
 
-      for (const question of result.questions) {
+      const questions = result.questions.slice(0, 10);
+      if (result.questions.length > 10) {
+        console.log(chalk.gray(`(Mostrando solo las 10 preguntas más críticas de ${result.questions.length})\n`));
+      }
+
+      for (const question of questions) {
         const answer = await input({
           message: chalk.whiteBright(question),
           validate: (val) => (val.trim().length > 0 ? true : 'Esta respuesta es obligatoria.'),
         });
+
+        // Detectar si el usuario dice "leelo vos mismo"
+        const autoFile = detectAutoReadAnswer(question, answer);
+        if (autoFile) {
+          getLogger().info('Usuario indicó leer archivo automáticamente', { file: autoFile });
+          const files = await readRequestedFiles([autoFile], process.cwd());
+          if (files.length > 0) {
+            qaHistory.push({
+              question,
+              answer: `[Contenido de ${autoFile}]:\n${files[0].content}`,
+            });
+            console.log(chalk.gray(`  → Archivo ${autoFile} leído automáticamente.\n`));
+            continue;
+          }
+        }
+
         qaHistory.push({ question, answer });
       }
       console.log(chalk.cyan('\nReevaluando con las nuevas aclaratorias...'));
@@ -82,6 +130,26 @@ export async function taskCommand(initialDescription?: string): Promise<void> {
     } else {
       console.log(chalk.red('Respuesta inesperada del motor de análisis. Reintentando...'));
       break;
+    }
+  }
+
+  if (!isReady && blockedRound >= MAX_BLOCKED_ROUNDS) {
+    const forceSpinner = ora('Generando SPEC con el contexto acumulado...').start();
+    const finalResult = await consultLeadGuard(
+      `GENERA UN SPEC CON LO QUE TIENES. El usuario ya no responderá más preguntas. Asume las mejores prácticas del framework detectado y documenta explícitamente cualquier suposición razonable en una sección "Supuestos". Requerimiento original: ${description}`,
+      context,
+      qaHistory,
+      selectedRole,
+      process.cwd()
+    );
+    forceSpinner.stop();
+
+    if (finalResult.status === 'READY' && finalResult.specContent) {
+      isReady = true;
+      specOutput = finalResult.specContent;
+    } else {
+      console.log(chalk.red('\nNo fue posible generar el SPEC. Intenta describir el requerimiento con más detalle.\n'));
+      return;
     }
   }
 
